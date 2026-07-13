@@ -47,6 +47,7 @@ class OperationController(Node):
         self.loop_index = 0
         self.wp_index = 0
         self.slam_proc = None
+        self.amcl_pose = None            # latest /amcl_pose, for clicked-point yaw
         self._events = deque()
 
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -58,6 +59,8 @@ class OperationController(Node):
         self.create_subscription(String, 'submit_mission', self._on_mission, 10)
         self.create_subscription(PointStamped, 'clicked_point',
                                  self._on_clicked_point, 10)
+        self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose',
+                                 self._on_amcl_pose, 10)
         self.create_service(Trigger, 'operator_done', self._on_operator_done)
 
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -131,11 +134,24 @@ class OperationController(Node):
             response.message = 'no operator action in phase %s' % self.phase.name
         return response
 
+    def _on_amcl_pose(self, msg):
+        self.amcl_pose = msg.pose.pose
+
+    def _current_yaw(self):
+        """Robot heading from the latest AMCL pose (0.0 until AMCL localizes)."""
+        if self.amcl_pose is None:
+            return 0.0
+        q = self.amcl_pose.orientation
+        return quaternion_to_yaw(q.x, q.y, q.z, q.w)
+
     def _on_clicked_point(self, msg):
         if self.phase == Phase.GOALPOINT_COLLECTION:
+            yaw = self._current_yaw()
             self.points.append(
-                {'x': float(msg.point.x), 'y': float(msg.point.y), 'yaw': 0.0})
-            self.get_logger().info('perimeter point %d captured' % len(self.points))
+                {'x': float(msg.point.x), 'y': float(msg.point.y), 'yaw': yaw})
+            self.get_logger().info(
+                'perimeter point %d captured (yaw=%.2f from amcl)'
+                % (len(self.points), yaw))
 
     # ---- entry side effects --------------------------------------------
     def _on_enter(self, phase):
@@ -150,8 +166,8 @@ class OperationController(Node):
             self._stop_slam()
         elif phase == Phase.GOALPOINT_COLLECTION:
             self.points = []
-            self._manage(self.loc_mgr, ManageLifecycleNodes.Request.STARTUP)
-            self._load_map()
+            self._manage_then(self.loc_mgr, ManageLifecycleNodes.Request.STARTUP,
+                              self._after_loc_for_goalpoints)
         elif phase == Phase.GOAL_POINTS_SAVED:
             self._manage(self.loc_mgr, ManageLifecycleNodes.Request.PAUSE)
         elif phase == Phase.START_NAVIGATION:
@@ -226,17 +242,43 @@ class OperationController(Node):
 
     # ---- navigation -----------------------------------------------------
     def _start_navigation(self):
-        self._manage(self.loc_mgr, ManageLifecycleNodes.Request.STARTUP)
-        self._manage(self.nav_mgr, ManageLifecycleNodes.Request.STARTUP)
-        self._load_map()
-        data = load_perimeter(self._map_path('_perimeter.yaml'))
+        # Load the perimeter first so a missing/invalid file fails fast, before
+        # we bother activating Nav2.
+        try:
+            data = load_perimeter(self._map_path('_perimeter.yaml'))
+        except (FileNotFoundError, OSError) as exc:
+            self.get_logger().error('cannot load perimeter: %s' % exc)
+            self.enqueue(Event.ERROR)
+            return
         self.dock = data['dock']
         self.waypoints = data['waypoints']
         self.loops_total = self.mission.get('loops', data.get('loops', 1))
+        # Activate localization, then navigation. Each step only proceeds once
+        # its lifecycle_manager reports the nodes active (the STARTUP response).
+        self._manage_then(self.loc_mgr, ManageLifecycleNodes.Request.STARTUP,
+                          self._after_loc_startup)
+
+    def _after_loc_startup(self, ok):
+        if not ok:
+            self.enqueue(Event.ERROR)
+            return
+        self._load_map()
         self._publish_initialpose(self.dock)
-        self.enqueue(Event.NAV_READY)
+        self._manage_then(self.nav_mgr, ManageLifecycleNodes.Request.STARTUP,
+                          self._after_nav_startup)
+
+    def _after_nav_startup(self, ok):
+        # Nav2 is active only now, so it is safe to send the first goal.
+        self.enqueue(Event.NAV_READY if ok else Event.ERROR)
+
+    def _after_loc_for_goalpoints(self, ok):
+        if ok:
+            self._load_map()
+        else:
+            self.enqueue(Event.ERROR)
 
     def _manage(self, client, command):
+        """Fire-and-forget lifecycle command (used for PAUSE / teardown)."""
         if not client.wait_for_service(timeout_sec=5.0):
             self.get_logger().error('lifecycle manager unavailable')
             self.enqueue(Event.ERROR)
@@ -244,6 +286,26 @@ class OperationController(Node):
         req = ManageLifecycleNodes.Request()
         req.command = command
         client.call_async(req)
+
+    def _manage_then(self, client, command, cb):
+        """Lifecycle command that calls cb(success) once the transition completes.
+        The manage_nodes response only returns after every managed node has
+        reached the target state, so this is the readiness signal for STARTUP."""
+        if not client.wait_for_service(timeout_sec=5.0):
+            self.get_logger().error('lifecycle manager unavailable')
+            cb(False)
+            return
+        req = ManageLifecycleNodes.Request()
+        req.command = command
+        client.call_async(req).add_done_callback(
+            lambda f: cb(self._manage_ok(f)))
+
+    def _manage_ok(self, future):
+        try:
+            return future.result().success
+        except Exception as exc:
+            self.get_logger().error('lifecycle call failed: %s' % exc)
+            return False
 
     def _load_map(self):
         if not self.load_map_cli.wait_for_service(timeout_sec=5.0):
