@@ -17,6 +17,7 @@ def generate_launch_description():
     nav2_bringup = get_package_share_directory('nav2_bringup')
 
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
+    autostart = LaunchConfiguration('autostart', default='true')
     map_yaml = LaunchConfiguration(
         'map', default=os.path.join(pkg_share, 'map', 'warehouse.yaml'))
     params_file = LaunchConfiguration(
@@ -25,6 +26,8 @@ def generate_launch_description():
 
     declare = [
         DeclareLaunchArgument('use_sim_time', default_value='true'),
+        DeclareLaunchArgument('autostart', default_value='true',
+                              description='Auto-activate Nav2 lifecycle on launch'),
         DeclareLaunchArgument(
             'map', default_value=os.path.join(pkg_share, 'map', 'warehouse.yaml'),
             description='Occupancy map yaml for localization'),
@@ -42,6 +45,7 @@ def generate_launch_description():
             'map': map_yaml,
             'use_sim_time': use_sim_time,
             'params_file': params_file,
+            'autostart': autostart,
         }.items())
 
     rviz = Node(
