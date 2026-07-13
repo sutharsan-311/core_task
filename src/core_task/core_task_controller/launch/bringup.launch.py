@@ -25,10 +25,19 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(gazebo_share, 'launch', 'warehouse.launch.py')))
 
+    # Gazebo's gzserver.launch.py declares a `params_file` arg defaulting to '',
+    # which collides with Nav2's `params_file` and leaks the empty value into
+    # Nav2 (RewrittenYaml then opens ''). Pass Nav2's params/map explicitly so
+    # the correct files win regardless of the collision.
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(nav_share, 'launch', 'navigation.launch.py')),
-        launch_arguments={'autostart': 'false', 'use_sim_time': 'true'}.items())
+        launch_arguments={
+            'autostart': 'false',
+            'use_sim_time': 'true',
+            'params_file': os.path.join(nav_share, 'param', 'nav2_params.yaml'),
+            'map': os.path.join(nav_share, 'map', 'warehouse.yaml'),
+        }.items())
 
     controller = Node(
         package='core_task_controller',
