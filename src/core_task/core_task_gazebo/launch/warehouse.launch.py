@@ -10,6 +10,7 @@
 #   - Forces TURTLEBOT3_MODEL=waffle_pi (camera + LIDAR).
 import os
 import subprocess
+import tempfile
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -36,6 +37,26 @@ def _nvidia_available():
                               timeout=5).returncode == 0
     except Exception:
         return False
+
+
+def _patched_lidar_sdf(sdf_path, range_m):
+    """Return a path to the waffle_pi SDF with the laser <range><max> set to
+    range_m metres. Stock 3.5 (LDS-01) -> original file untouched; anything else
+    is written to a temp copy so the system model is never modified. Mesh
+    model:// URIs resolve via GAZEBO_MODEL_PATH regardless of file location."""
+    if range_m in ('3.5', '3.50', '3.500000'):
+        return sdf_path
+    with open(sdf_path) as f:
+        sdf = f.read()
+    patched = sdf.replace('<max>3.5</max>', '<max>%s</max>' % range_m)
+    if patched == sdf:
+        raise RuntimeError(
+            'laser <max>3.5</max> not found in %s (upstream SDF changed)' % sdf_path)
+    out = os.path.join(
+        tempfile.gettempdir(), 'turtlebot3_%s_lidar%s.sdf' % (TB3_MODEL, range_m))
+    with open(out, 'w') as f:
+        f.write(patched)
+    return out
 
 
 def _source_gazebo_setup():
@@ -110,9 +131,15 @@ def generate_launch_description():
         launch_arguments={'use_sim_time': use_sim_time}.items())
 
     # Spawn directly (stock spawn_turtlebot3.launch.py exposes no yaw arg).
-    urdf_path = os.path.join(
-        get_package_share_directory('turtlebot3_gazebo'),
-        'models', 'turtlebot3_' + TB3_MODEL, 'model.sdf')
+    # The stock SDF hard-codes the 3.5 m LDS-01, which can't see across the
+    # warehouse aisles for SLAM. Default to the 12 m LDS-02 the current TB3
+    # actually ships; override with CORE_TASK_LIDAR_RANGE (e.g. 3.5 for LDS-01).
+    # Keep core_task_mapping's slam max_laser_range in sync with this.
+    lidar_range = os.environ.get('CORE_TASK_LIDAR_RANGE', '12.0')
+    urdf_path = _patched_lidar_sdf(
+        os.path.join(get_package_share_directory('turtlebot3_gazebo'),
+                     'models', 'turtlebot3_' + TB3_MODEL, 'model.sdf'),
+        lidar_range)
     spawn_turtlebot = Node(
         package='gazebo_ros', executable='spawn_entity.py', output='screen',
         arguments=[
