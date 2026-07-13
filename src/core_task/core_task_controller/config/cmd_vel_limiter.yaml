@@ -1,0 +1,6 @@
+cmd_vel_limiter:
+  ros__parameters:
+    max_linear: 0.26     # m/s   TurtleBot3 Waffle Pi rated max
+    max_angular: 1.82    # rad/s TurtleBot3 Waffle Pi rated max
+    input_topic: cmd_vel_in
+    output_topic: cmd_vel
