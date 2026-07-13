@@ -34,9 +34,16 @@ class OperationController(Node):
     def __init__(self):
         super().__init__('operation_controller')
         # Where maps + perimeters live (co-located with the navigation package).
-        default_map_dir = os.path.join(
-            get_package_share_directory('core_task_navigation'), 'map')
+        # Prefer the SOURCE map dir so saved maps/perimeters persist across
+        # colcon builds and land in git; fall back to the install share dir if
+        # the source tree isn't present (install-only deployment).
+        nav_share = get_package_share_directory('core_task_navigation')
+        src_pkg = nav_share.replace('/install/', '/src/core_task/').split('/share/')[0]
+        src_map = os.path.join(src_pkg, 'map')
+        default_map_dir = src_map if os.path.isdir(src_map) \
+            else os.path.join(nav_share, 'map')
         self.map_dir = self.declare_parameter('map_dir', default_map_dir).value
+        self.get_logger().info('map_dir = %s' % self.map_dir)
 
         self.phase = Phase.IDLE
         self.mission = None

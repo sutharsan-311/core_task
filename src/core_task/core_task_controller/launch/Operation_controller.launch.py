@@ -21,12 +21,13 @@ def generate_launch_description():
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(nav_share, 'launch', 'navigation.launch.py')),
-        launch_arguments={'autostart': 'false'}.items())
+        launch_arguments={'autostart': 'false', 'use_sim_time': 'true'}.items())
 
     controller = Node(
         package='core_task_controller',
         executable='operation_controller',
         name='operation_controller',
-        output='screen')
+        output='screen',
+        parameters=[{'use_sim_time': True}])
 
     return LaunchDescription([nav2, controller])
