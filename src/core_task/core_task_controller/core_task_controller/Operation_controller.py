@@ -66,6 +66,8 @@ class OperationController(Node):
         self.create_subscription(String, 'submit_mission', self._on_mission, 10)
         self.create_subscription(PointStamped, 'clicked_point',
                                  self._on_clicked_point, 10)
+        self.create_subscription(PoseStamped, 'goal_pose',
+                                 self._on_goal_pose, 10)
         self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose',
                                  self._on_amcl_pose, 10)
         self.create_service(Trigger, 'operator_done', self._on_operator_done)
@@ -166,6 +168,17 @@ class OperationController(Node):
                 {'x': float(msg.point.x), 'y': float(msg.point.y), 'yaw': yaw})
             self.get_logger().info(
                 'perimeter point %d captured (yaw=%.2f from amcl)'
+                % (len(self.points), yaw))
+
+    def _on_goal_pose(self, msg):
+        # RViz "2D Nav Goal" -> position + operator-drawn heading.
+        if self.phase == Phase.GOALPOINT_COLLECTION:
+            q = msg.pose.orientation
+            yaw = quaternion_to_yaw(q.x, q.y, q.z, q.w)
+            self.points.append({'x': float(msg.pose.position.x),
+                                'y': float(msg.pose.position.y), 'yaw': yaw})
+            self.get_logger().info(
+                'perimeter point %d captured (yaw=%.2f from 2D Nav Goal)'
                 % (len(self.points), yaw))
 
     # ---- entry side effects --------------------------------------------
