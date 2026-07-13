@@ -22,6 +22,12 @@ def test_navigation_happy_path():
     assert run(seq) == Phase.IDLE
 
 
+def test_collect_goals_happy_path():
+    seq = [Event.SUBMIT_GOALS, Event.INIT_GOALS,
+           Event.OPERATOR_DONE, Event.ADVANCE]
+    assert run(seq) == Phase.IDLE
+
+
 def test_operator_done_branches_by_phase():
     assert next_phase(Phase.MAPPING, Event.OPERATOR_DONE) == Phase.SAVING
     assert (next_phase(Phase.GOALPOINT_COLLECTION, Event.OPERATOR_DONE)

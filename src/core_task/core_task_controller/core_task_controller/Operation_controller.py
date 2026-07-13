@@ -125,8 +125,9 @@ class OperationController(Node):
             self.enqueue(Event.SUBMIT_INVALID)
             return
         self.mission = mission
-        self.enqueue(Event.SUBMIT_MAPPING if mission['mode'] == 'mapping'
-                     else Event.SUBMIT_NAV)
+        self.enqueue({'mapping': Event.SUBMIT_MAPPING,
+                      'navigation': Event.SUBMIT_NAV,
+                      'collect_goals': Event.SUBMIT_GOALS}[mission['mode']])
 
     def _on_operator_done(self, request, response):
         if self.phase == Phase.MAPPING:
@@ -151,6 +152,13 @@ class OperationController(Node):
         q = self.amcl_pose.orientation
         return quaternion_to_yaw(q.x, q.y, q.z, q.w)
 
+    def _current_pose_dict(self):
+        """Robot pose from the latest AMCL estimate, or None if not localized."""
+        if self.amcl_pose is None:
+            return None
+        p, q = self.amcl_pose.position, self.amcl_pose.orientation
+        return {'x': p.x, 'y': p.y, 'yaw': quaternion_to_yaw(q.x, q.y, q.z, q.w)}
+
     def _on_clicked_point(self, msg):
         if self.phase == Phase.GOALPOINT_COLLECTION:
             yaw = self._current_yaw()
@@ -163,8 +171,9 @@ class OperationController(Node):
     # ---- entry side effects --------------------------------------------
     def _on_enter(self, phase):
         if phase == Phase.INITIALIZATION:
-            self.enqueue(Event.INIT_MAPPING if self.mission['mode'] == 'mapping'
-                         else Event.INIT_NAV)
+            self.enqueue({'mapping': Event.INIT_MAPPING,
+                          'navigation': Event.INIT_NAV,
+                          'collect_goals': Event.INIT_GOALS}[self.mission['mode']])
         elif phase == Phase.START_MAPPING:
             self._start_slam()
         elif phase == Phase.SAVING:
@@ -242,10 +251,15 @@ class OperationController(Node):
         self.enqueue(Event.SAVE_OK if rc == 0 else Event.ERROR)
 
     def _save_perimeter(self):
+        # In collect_goals mode there was no mapping phase to capture the dock,
+        # so fall back to the robot's current AMCL pose (then origin).
+        dock = self.dock or self._current_pose_dict() \
+            or {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
         save_perimeter(self._map_path('_perimeter.yaml'),
-                       self.mission['map_name'], self.dock, self.points,
+                       self.mission['map_name'], dock, self.points,
                        loops=self.mission.get('loops', 1))
-        self.get_logger().info('perimeter saved (%d points)' % len(self.points))
+        self.get_logger().info('perimeter saved (%d points, dock=%s)'
+                               % (len(self.points), dock))
 
     # ---- navigation -----------------------------------------------------
     def _start_navigation(self):

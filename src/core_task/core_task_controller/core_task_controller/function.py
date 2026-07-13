@@ -6,7 +6,7 @@ from enum import Enum, auto
 
 import yaml
 
-VALID_MODES = ('mapping', 'navigation')
+VALID_MODES = ('mapping', 'navigation', 'collect_goals')
 
 
 # --------------------------------------------------------------------------
@@ -86,8 +86,10 @@ class Phase(Enum):
 class Event(Enum):
     SUBMIT_MAPPING = auto()
     SUBMIT_NAV = auto()
+    SUBMIT_GOALS = auto()
     INIT_MAPPING = auto()
     INIT_NAV = auto()
+    INIT_GOALS = auto()
     SUBMIT_INVALID = auto()
     SLAM_READY = auto()
     OPERATOR_DONE = auto()
@@ -105,10 +107,13 @@ class Event(Enum):
 _TRANSITIONS = {
     (Phase.IDLE, Event.SUBMIT_MAPPING): Phase.INITIALIZATION,
     (Phase.IDLE, Event.SUBMIT_NAV): Phase.INITIALIZATION,
+    (Phase.IDLE, Event.SUBMIT_GOALS): Phase.INITIALIZATION,
     (Phase.FAULT, Event.SUBMIT_MAPPING): Phase.INITIALIZATION,
     (Phase.FAULT, Event.SUBMIT_NAV): Phase.INITIALIZATION,
+    (Phase.FAULT, Event.SUBMIT_GOALS): Phase.INITIALIZATION,
     (Phase.INITIALIZATION, Event.INIT_MAPPING): Phase.START_MAPPING,
     (Phase.INITIALIZATION, Event.INIT_NAV): Phase.START_NAVIGATION,
+    (Phase.INITIALIZATION, Event.INIT_GOALS): Phase.GOALPOINT_COLLECTION,
     (Phase.INITIALIZATION, Event.SUBMIT_INVALID): Phase.FAULT,
     (Phase.START_MAPPING, Event.SLAM_READY): Phase.MAPPING,
     (Phase.MAPPING, Event.OPERATOR_DONE): Phase.SAVING,
