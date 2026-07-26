@@ -1,8 +1,5 @@
 # ROS 2 / colcon build artifacts
-build/
-install/
-log/
-src/core_task/logs/
+logs/*
 
 # Python
 __pycache__/
@@ -15,6 +12,4 @@ __pycache__/
 .DS_Store
 
 # AI-workflow scratch + model weights (not part of the submission)
-.superpowers/
 yolov8n.pt
-docs/superpowers/
