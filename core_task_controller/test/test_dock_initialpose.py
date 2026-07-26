@@ -51,6 +51,36 @@ def _fake_transform(x, y, yaw):
         rotation=SimpleNamespace(x=0.0, y=0.0, z=math.sin(yaw / 2), w=math.cos(yaw / 2))))
 
 
+# ---- Operation_controller: navigation waits for the map swap too
+
+def test_navigation_waits_for_map_swap_before_publishing_pose(op_node):
+    op_node.dock = [1.0, 2.0, 0.0]
+    op_node._publish_initialpose = Mock()
+    op_node._manage_then = Mock()
+    load_map_calls = []
+    op_node._load_map = lambda cb: load_map_calls.append(cb)
+
+    op_node._after_loc_startup(True)
+
+    op_node._publish_initialpose.assert_not_called()
+    op_node._manage_then.assert_not_called()  # nav2 startup gated on it too
+    load_map_calls[0](True)
+    op_node._publish_initialpose.assert_called_once_with([1.0, 2.0, 0.0])
+    op_node._manage_then.assert_called_once()
+
+
+def test_navigation_map_load_failure_faults(op_node):
+    op_node._load_map = Mock(side_effect=lambda cb: cb(False))
+    op_node._publish_initialpose = Mock()
+    op_node._events.clear()
+
+    op_node._after_loc_startup(True)
+
+    op_node._publish_initialpose.assert_not_called()
+    from core_task_controller.function import Event
+    assert list(op_node._events) == [Event.ERROR]
+
+
 # ---- Operation_controller: capture at CLOSE_MAPPING, publish at goal collection
 
 def test_close_mapping_captures_live_pose(op_node):
@@ -66,10 +96,9 @@ def test_close_mapping_captures_live_pose(op_node):
 
 def test_goalpoints_publish_uses_mapped_pose_then_clears(op_node):
     op_node._last_mapped_pose = [1.5, -2.0, 0.3]
-    op_node._load_map = Mock()
     op_node._publish_initialpose = Mock()
 
-    op_node._after_loc_for_goalpoints(True)
+    op_node._after_map_loaded_for_goalpoints(True)
 
     op_node._publish_initialpose.assert_called_once_with([1.5, -2.0, 0.3])
     assert op_node._last_mapped_pose is None  # doesn't leak into a later run
@@ -84,10 +113,9 @@ def test_goalpoints_reuses_existing_perimeter_dock_for_already_mapped_map(
     op_node.mission = {'map_name': 'foo'}
     save_perimeter(tmp_path / 'foo_perimeter.yaml', 'foo', [4.0, 5.0, 1.0], [])
     op_node._last_mapped_pose = None
-    op_node._load_map = Mock()
     op_node._publish_initialpose = Mock()
 
-    op_node._after_loc_for_goalpoints(True)
+    op_node._after_map_loaded_for_goalpoints(True)
 
     op_node._publish_initialpose.assert_called_once_with([4.0, 5.0, 1.0])
 
@@ -100,12 +128,40 @@ def test_goalpoints_first_ever_collection_falls_back_to_amcl_default(
     op_node.map_dir = str(tmp_path)
     op_node.mission = {'map_name': 'never_seen'}
     op_node._last_mapped_pose = None
-    op_node._load_map = Mock()
     op_node._publish_initialpose = Mock()
+
+    op_node._after_map_loaded_for_goalpoints(True)
+
+    op_node._publish_initialpose.assert_not_called()
+
+
+def test_goalpoints_waits_for_map_swap_before_publishing_pose(op_node):
+    """map_server keeps serving the previous mission's map the instant it
+    reactivates, and only swaps once LoadMap's response lands - publishing
+    initialpose before that risks AMCL evaluating it against the wrong map."""
+    op_node._last_mapped_pose = [1.5, -2.0, 0.3]
+    op_node._publish_initialpose = Mock()
+    load_map_calls = []
+    op_node._load_map = lambda cb: load_map_calls.append(cb)
+
+    op_node._after_loc_for_goalpoints(True)
+
+    op_node._publish_initialpose.assert_not_called()  # not yet - map isn't loaded
+    load_map_calls[0](True)                            # LoadMap now completes
+    op_node._publish_initialpose.assert_called_once_with([1.5, -2.0, 0.3])
+
+
+def test_goalpoints_map_load_failure_faults_without_publishing(op_node):
+    op_node._last_mapped_pose = [1.5, -2.0, 0.3]
+    op_node._publish_initialpose = Mock()
+    op_node._load_map = Mock(side_effect=lambda cb: cb(False))
+    op_node._events.clear()
 
     op_node._after_loc_for_goalpoints(True)
 
     op_node._publish_initialpose.assert_not_called()
+    from core_task_controller.function import Event
+    assert list(op_node._events) == [Event.ERROR]
 
 
 def test_goalpoints_failure_still_faults(op_node):

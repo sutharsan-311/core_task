@@ -373,7 +373,16 @@ class OperationController(Node):
         if not ok:
             self.enqueue(Event.ERROR)
             return
-        self._load_map()
+        # map_server keeps serving whatever it last had loaded the instant it
+        # (re)activates - it only swaps to this mission's map once this
+        # LoadMap call actually completes. Publishing initialpose any sooner
+        # risks AMCL evaluating it against the wrong (previous) map.
+        self._load_map(self._after_map_loaded_for_nav)
+
+    def _after_map_loaded_for_nav(self, ok):
+        if not ok:
+            self.enqueue(Event.ERROR)
+            return
         self._publish_initialpose(self.dock)
         self._manage_then(self.nav_mgr, ManageLifecycleNodes.Request.STARTUP,
                           self._after_nav_startup)
@@ -386,7 +395,12 @@ class OperationController(Node):
         if not ok:
             self.enqueue(Event.ERROR)
             return
-        self._load_map()
+        self._load_map(self._after_map_loaded_for_goalpoints)
+
+    def _after_map_loaded_for_goalpoints(self, ok):
+        if not ok:
+            self.enqueue(Event.ERROR)
+            return
         pose, self._last_mapped_pose = self._last_mapped_pose, None
         if pose is None:
             # Not freshly mapped this session - the map's own perimeter file
@@ -434,14 +448,24 @@ class OperationController(Node):
             self.get_logger().error('lifecycle call failed: %s' % exc)
             return False
 
-    def _load_map(self):
+    def _load_map(self, cb):
+        """cb(success) fires once map_server has actually swapped to this
+        mission's map - not merely once the request was sent."""
         if not self.load_map_cli.wait_for_service(timeout_sec=5.0):
             self.get_logger().error('load_map unavailable')
-            self.enqueue(Event.ERROR)
+            cb(False)
             return
         req = LoadMap.Request()
         req.map_url = self._map_path('.yaml')
-        self.load_map_cli.call_async(req)
+        self.load_map_cli.call_async(req).add_done_callback(
+            lambda f: cb(self._load_map_ok(f)))
+
+    def _load_map_ok(self, future):
+        try:
+            return future.result().result == LoadMap.Response.RESULT_SUCCESS
+        except Exception as exc:
+            self.get_logger().error('load_map call failed: %s' % exc)
+            return False
 
     def _publish_initialpose(self, pose):
         """pose is [x, y, yaw]."""
