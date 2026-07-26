@@ -30,7 +30,7 @@ Prompt  →  LLM  →  Validated JSON  →  Executor FSM  →  Nav2/Gazebo
 - Checks returned JSON against a schema: mission type, robot(s), waypoints, speeds
 - Validates safety: waypoints must be in known maps, speeds within limits (0–0.5 m/s), valid command sequences
 - Drops malformed or unsafe missions before any wheel turns
-- Example: a prompt to "go 100 m/s" is rejected; one to "patrol the perimeter" passes
+- Example: a prompt to "go 100 m/s" is rejected; one to "patrol the perimeter twice" passes
 
 **3. Deterministic Executor (`core_task_controller/operation_controller.py`)**
 - A finite-state machine (FSM) that reads validated JSON and issues concrete commands
@@ -56,7 +56,7 @@ Prompt  →  LLM  →  Validated JSON  →  Executor FSM  →  Nav2/Gazebo
 ### Challenge 1: Multi-Agent Squad Patrol ✅
 
 **What it does:**
-- User issues `"both robots patrol, split the perimeter between them"`
+- User issues `"both robots patrol the perimeter, split it between them"`
 - Two robots spawn in Gazebo (robot 1 at the dock, robot 2 at origin)
 - A squad coordinator divides the perimeter waypoints between them
 - Both navigate their half of the loop autonomously in parallel
@@ -77,11 +77,11 @@ Prompt  →  LLM  →  Validated JSON  →  Executor FSM  →  Nav2/Gazebo
 ### Challenge 2: SLAM (Simultaneous Localization and Mapping) ✅
 
 **What it does:**
-- User types `"start building a map"` → robot enters SLAM mode
+- User types `"start building a map called floor2"` → robot enters SLAM mode
 - Gazebo + Nav2 + SLAM Toolbox bring up online mapping
-- Robot drives around the warehouse (manually guided via waypoints or direct teleoperation)
+- Robot drives around the warehouse (manually guided via arrow keys or direct teleoperation)
 - RViz shows the map filling in real time
-- User says `"done"` → map is saved to disk
+- User says `"done"` → map is saved as `floor2_perimeter.yaml`
 
 **How it works:**
 - `core_task_mapping/launch/mapping.launch.py` brings up SLAM Toolbox with a TurtleBot3 config

@@ -195,7 +195,7 @@ class _Bus(Node):
         if msg.data.startswith('fault') and not previous.startswith('fault'):
             self._sink(BAD, 'faulted - type "reset" to clear back to idle, or '
                             'send a new mission (e.g. "patrol the perimeter '
-                            'once"); abort / return to start do nothing here.')
+                            'twice"); abort / return to start do nothing here.')
 
 
 class _Screen:
@@ -291,7 +291,7 @@ class _Screen:
             'patrol the perimeter twice',
             'start building a map called mapname',
             'collect waypoints',
-            'patrol by squad'
+            'both robots patrol the perimeter twice'
         ]
         for mission in missions:
             line = '║   • ' + mission.ljust(w - 8) + '║'
