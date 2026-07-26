@@ -58,6 +58,7 @@ class OperationController(Node):
         self.phase = Phase.IDLE
         self.mission = None
         self.dock = None                 # [x, y, yaw] captured at mapping start
+        self._last_mapped_pose = None    # [x, y, yaw] captured at mapping end
         self.waypoints = []              # loaded perimeter for navigation
         self.loops_total = 1
         self.loop_index = 0
@@ -241,6 +242,11 @@ class OperationController(Node):
         elif phase == Phase.SAVING:
             self._save_map()
         elif phase == Phase.CLOSE_MAPPING:
+            # slam_toolbox's map->base_footprint is the only accurate fix we'll
+            # have on the just-saved map: nav2_params.yaml's initial_pose is a
+            # cold-boot default for the original map only, wrong for any map
+            # built since. Grab it before the SLAM process (and its TF) dies.
+            self._last_mapped_pose = self._lookup_pose()
             self._stop_slam()
         elif phase == Phase.GOALPOINT_COLLECTION:
             self._manage_then(self.loc_mgr, ManageLifecycleNodes.Request.STARTUP,
@@ -290,17 +296,24 @@ class OperationController(Node):
         if self.slam_proc and self.slam_proc.poll() is None:
             os.killpg(os.getpgid(self.slam_proc.pid), signal.SIGINT)
 
-    def _capture_dock(self):
-        """Look up map->base_footprint once; store as dock. True when captured."""
-        if self.dock is not None:
-            return True
+    def _lookup_pose(self):
+        """map->base_footprint right now, or None if unavailable."""
         try:
             tf = self.tf_buffer.lookup_transform(
                 'map', 'base_footprint', rclpy.time.Time())
         except Exception:
-            return False
+            return None
         t, q = tf.transform.translation, tf.transform.rotation
-        self.dock = [t.x, t.y, quaternion_to_yaw(q.x, q.y, q.z, q.w)]
+        return [t.x, t.y, quaternion_to_yaw(q.x, q.y, q.z, q.w)]
+
+    def _capture_dock(self):
+        """Look up map->base_footprint once; store as dock. True when captured."""
+        if self.dock is not None:
+            return True
+        pose = self._lookup_pose()
+        if pose is None:
+            return False
+        self.dock = pose
         self.get_logger().info('dock captured: %s' % self.dock)
         return True
 
@@ -314,7 +327,8 @@ class OperationController(Node):
         self._save_name = None
         path = os.path.join(self.map_dir, name)
         rc = subprocess.run(
-            ['ros2', 'run', 'nav2_map_server', 'map_saver_cli', '-f', path],
+            ['ros2', 'run', 'nav2_map_server', 'map_saver_cli', '-f', path,
+             '--occ', '0.65', '--free', '0.196'],
             capture_output=True).returncode
         self.get_logger().info('map saved as "%s" (rc=%s)' % (name, rc))
 
@@ -369,10 +383,26 @@ class OperationController(Node):
         self.enqueue(Event.NAV_READY if ok else Event.ERROR)
 
     def _after_loc_for_goalpoints(self, ok):
-        if ok:
-            self._load_map()
-        else:
+        if not ok:
             self.enqueue(Event.ERROR)
+            return
+        self._load_map()
+        pose, self._last_mapped_pose = self._last_mapped_pose, None
+        if pose is None:
+            # Not freshly mapped this session - the map's own perimeter file
+            # (if this map was ever collected before) has a real dock for it,
+            # unlike nav2_params.yaml's initial_pose which only fits the
+            # original default map. First-ever collection has neither; AMCL's
+            # own cold-boot default is the best guess left at that point.
+            pose = self._existing_dock()
+        if pose is not None:
+            self._publish_initialpose(pose)
+
+    def _existing_dock(self):
+        try:
+            return load_perimeter(self._map_path('_perimeter.yaml')).get('dock')
+        except (FileNotFoundError, OSError):
+            return None
 
     def _manage(self, client, command):
         """Fire-and-forget lifecycle command (used for PAUSE / teardown)."""

@@ -105,14 +105,16 @@ class GoalCollector(Node):
                 self.map_name = last_map
                 self.get_logger().info('using newly mapped map: "%s"' % self.map_name)
 
-            # Start clean. The dock may be None here -
-            # AMCL is activated by this same transition and usually hasn't
-            # published a pose yet, so _on_amcl_pose pins it a moment later.
+            # Start clean. Drop any retained amcl_pose too - it may be a stale
+            # reading from before this transition (a leftover from mapping, or
+            # from wherever the robot was on a previous run), and saving it as
+            # the dock would silently pin the wrong spot. Wait for AMCL to
+            # publish a fresh one instead; _on_amcl_pose pins it a moment later.
             self.points = []
-            self.dock = self._current_pose()
-            self.get_logger().info('collecting for map "%s" (dock=%s)'
-                                   % (self.map_name, self.dock or 'pending amcl'))
-            self._save()
+            self.amcl_pose = None
+            self.dock = None
+            self.get_logger().info(
+                'collecting for map "%s" (dock=pending amcl)' % self.map_name)
             self._publish_markers()      # clears any markers from a prior run
         elif self.phase != COLLECT_PHASE and previous == COLLECT_PHASE:
             # Exiting collection: clear the .last_map file so the next collection
@@ -128,8 +130,12 @@ class GoalCollector(Node):
 
     def _on_amcl_pose(self, msg):
         self.amcl_pose = msg.pose.pose
-        # Pin the dock to the first AMCL pose seen after collection starts.
-        if self.phase == COLLECT_PHASE and self.dock is None:
+        # Keep refining the dock until the first waypoint is captured, then
+        # freeze it. AMCL's activation always broadcasts nav2_params.yaml's
+        # default pose first, then a corrected one once Operation_controller's
+        # real initialpose for this map lands a moment later - locking onto
+        # the very first message here pins that transient default instead.
+        if self.phase == COLLECT_PHASE and not self.points:
             self.dock = self._current_pose()
             self.get_logger().info('dock pinned from amcl: [%.2f, %.2f, %.2f]'
                                    % tuple(self.dock))

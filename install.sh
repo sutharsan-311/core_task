@@ -8,7 +8,8 @@
 #   ./run.sh
 set -euo pipefail
 
-WS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS="$(cd "$PKG/../.." && pwd)"
 cd "$WS"
 
 if [ -z "${ROS_DISTRO:-}" ]; then
@@ -21,6 +22,10 @@ sudo apt-get update
 sudo rosdep init 2>/dev/null || true
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
+# Not a rosdep key of any package.xml here - it's pulled in explicitly to avoid
+# an ABI mismatch between Nav2's lifecycle manager and diagnostic_updater
+# (see Dockerfile).
+sudo apt-get install -y ros-humble-diagnostic-updater
 
 echo ">> Python dependencies (Bedrock + vision)"
 python3 -m pip install boto3 -r src/core_task/core_task_perception/requirements.txt

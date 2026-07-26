@@ -1,6 +1,6 @@
 # ROS 2 / colcon build artifacts
 logs/*
-
+core_task_navigation/map/*
 # Python
 __pycache__/
 *.pyc

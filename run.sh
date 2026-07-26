@@ -16,6 +16,10 @@ set -o pipefail
 
 PKG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS="$(cd "$PKG/../.." && pwd)"
+# In the Docker image the workspace is flattened (COPY . /omokai_ws puts
+# run.sh straight at the ws root), so the host's <ws>/src/core_task depth
+# assumption doesn't hold there. Fall back to PKG itself in that case.
+[ ! -f "$WS/install/setup.bash" ] && [ -f "$PKG/install/setup.bash" ] && WS="$PKG"
 # shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash
 # shellcheck disable=SC1091
