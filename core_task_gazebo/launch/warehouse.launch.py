@@ -114,7 +114,8 @@ def _patched_robot_sdf(sdf_path, range_m, camera_pitch, namespace=''):
                 % sdf_path)
         patched = after
 
-    # Remove LiDAR visual from base_scan link.
+    # Keep LiDAR visual enabled in Gazebo so it's visible on the robot.
+    # Comment out the replacement below to hide it again if it causes performance issues.
     lidar_visual = ('      <visual name="lidar_sensor_visual">\n'
                     '        <pose>-0.064 0 0.121 0 0 0</pose>\n'
                     '        <geometry>\n'
@@ -128,7 +129,7 @@ def _patched_robot_sdf(sdf_path, range_m, camera_pitch, namespace=''):
                     '          <diffuse>0.2 0.2 0.2 1.0</diffuse>\n'
                     '        </material>\n'
                     '      </visual>\n')
-    patched = patched.replace(lidar_visual, '')
+    # patched = patched.replace(lidar_visual, '')  # Disabled: keep LiDAR visible
 
     if namespace:
         patched = _namespaced(patched, namespace)
