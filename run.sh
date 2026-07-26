@@ -14,7 +14,8 @@
 # to src/core_task/logs/ (path printed at startup) so they don't corrupt the prompt.
 set -o pipefail
 
-WS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS="$(cd "$PKG/../.." && pwd)"
 # shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash
 # shellcheck disable=SC1091
@@ -27,7 +28,7 @@ if [ -z "${AWS_REGION:-}" ] && [ -z "${AWS_DEFAULT_REGION:-}" ]; then
   echo "         'ros2 topic pub /submit_mission ...'."
 fi
 
-LOG_DIR="$WS/src/core_task/logs"
+LOG_DIR="$PKG/logs"
 mkdir -p "$LOG_DIR"
 # Sequential run number (1, 2, 3, ...): first unused omokai-bringup.N.log.
 N=1
@@ -61,5 +62,5 @@ rc=$?
 # the light cleanup above doesn't also fire.
 if [ "$rc" = "42" ]; then
   trap - EXIT
-  exec "$WS/kill.sh"
+  exec "$PKG/kill.sh"
 fi

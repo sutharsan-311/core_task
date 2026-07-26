@@ -12,7 +12,8 @@
 #   ./kill.sh
 set -o pipefail
 
-WS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS="$(cd "$PKG/../.." && pwd)"
 # shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash 2>/dev/null
 
