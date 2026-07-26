@@ -29,12 +29,12 @@ COPY . /omokai_ws
 # Python deps: boto3 for Bedrock, and the vision pins (numpy<2 + ultralytics)
 # from the perception package's requirements.txt.
 RUN pip3 install --no-cache-dir boto3 \
-      -r src/core_task/core_task_perception/requirements.txt
+      -r core_task_perception/requirements.txt
 
 # Resolve any remaining rosdep keys from the package.xml files, then build.
 RUN apt-get update \
     && rosdep update \
-    && rosdep install --from-paths src --ignore-src -r -y \
+    && rosdep install --from-paths . --ignore-src -r -y \
     && rm -rf /var/lib/apt/lists/* \
     && source /opt/ros/humble/setup.bash \
     && colcon build --symlink-install
