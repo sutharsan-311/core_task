@@ -1,0 +1,9 @@
+# Vision deps for core_task_perception (pip-only; no rosdep keys).
+#
+# numpy MUST stay < 2: ROS Humble's cv_bridge is compiled against numpy 1.x and
+# fails to import ("_ARRAY_API not found") under numpy 2.x.
+#
+# ultralytics (YOLOv8) is optional — only install if demonstrating Challenge 3
+# (vision detect-and-follow). Otherwise omit to keep Docker image lightweight.
+numpy<2
+# ultralytics>=8.0  # Optional: uncomment for vision detection challenge

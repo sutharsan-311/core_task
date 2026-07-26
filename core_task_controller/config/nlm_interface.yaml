@@ -1,0 +1,11 @@
+nlm_interface:
+  ros__parameters:
+    # Bedrock Converse model ID. Nova Micro is cheap/fast and handles the
+    # structured-JSON task; override with any Converse-capable model
+    # (e.g. us.amazon.nova-lite-v1:0). Bare Anthropic aliases are NOT valid
+    # here - Bedrock wants the full model / inference-profile ID.
+    model: "us.amazon.nova-micro-v1:0"
+    # 0.0-1.0, lower = more deterministic. Mapping one sentence onto
+    # {mode, map_name, loops?} wants stability, not creativity.
+    temperature: 0.3
+    # Auth is via AWS credentials + AWS_REGION (env / instance profile / ~/.aws).

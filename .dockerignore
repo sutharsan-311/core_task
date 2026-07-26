@@ -1,0 +1,12 @@
+# Host-built ROS artifacts — rebuilt inside the image, must not leak in.
+build/
+install/
+log/
+src/core_task/logs/
+
+# VCS and editor cruft.
+.git/
+.superpowers/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/

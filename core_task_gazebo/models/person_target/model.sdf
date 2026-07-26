@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="person_target">
+    <!-- Kinematic, not static: target_mover poses it directly via
+         /set_entity_state, so it walks a fixed path without physics (never
+         falls, never gets stuck). gravity off + kinematic keep it upright and
+         immune to being knocked; it still collides, so the robot stops at it.
+         With no mover running it simply stands where spawned. -->
+    <static>false</static>
+    <link name="link">
+      <gravity>0</gravity>
+      <kinematic>1</kinematic>
+      <inertial>
+        <mass>50.0</mass>
+        <inertia>
+          <ixx>1.0</ixx><iyy>1.0</iyy><izz>1.0</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <!-- walk.dae's origin is at the hip (~1 m up on a 2 m mesh), so at the
+             link origin the legs sink under the floor. Lift the mesh so the
+             feet sit on the ground. Tune this z if the model still sinks
+             (raise) or floats (lower); the link origin and collision below
+             stay floor-anchored. -->
+        <pose>0 0 1.1 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://person_target/meshes/walk.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <!-- Human-sized box so the robot halts on contact. Centred at 0.9 m so
+           it spans floor to ~1.8 m. Visual is the mesh; this is just the
+           physical blocker. -->
+      <collision name="collision">
+        <pose>0 0 0.9 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.5 0.4 1.8</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>
