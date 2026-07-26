@@ -165,7 +165,7 @@ When you run `./run.sh`, the nlm_cli opens an interactive prompt:
 ║                  MISSIONS · CONTROLS · STATUS                  ║
 ╠════════════════════════════════════════════════════════════════╣
 ║ MISSIONS:                                                      ║
-║   patrol the perimeter twice                                   ║
+║   patrol the perimeter twice in warehouse                      ║
 ║   start building a map called mapname                          ║
 ║   collect waypoints                                            ║
 ║   patrol by squad                                              ║
@@ -183,7 +183,7 @@ Type a mission in plain English:
 
 **Type your mission**, e.g.:
 ```
-patrol the perimeter twice
+patrol the perimeter twice in warehouse
 ```
 
 **What happens:**
@@ -232,13 +232,13 @@ At the prompt, type a mission in plain English. The LLM converts your command to
 
 | Command Example | What it does | Notes |
 |---|---|---|
-| `patrol the perimeter twice` | Navigate the saved perimeter loop 2 times and return to dock | Requires a map and perimeter file; loops can be 1, 2, 3, etc. |
+| `patrol the perimeter twice in warehouse` | Navigate the saved perimeter loop 2 times and return to dock | Requires a map and perimeter file; loops can be 1, 2, 3, etc. |
 | `patrol the perimeter 3 times` | Navigate the loop 3 times | Works for any number of loops |
 | `start building a map called floor2` | Begin SLAM mapping under the name "floor2" | **Must specify a map name**; use arrow keys to manually drive the robot around |
 | `start building a map` | **Rejected** — LLM requires explicit map name | Reply with: "Please specify a map name (e.g., 'start building a map called floor2')" |
 | `collect waypoints` | Collect perimeter waypoints for the default "warehouse" map | Click points in RViz (`Publish Point` or `2D Goal Pose`); each point appears as a green marker |
 | `capture the perimeter waypoints` | Same as above | Alternative phrasing |
-| `both robots patrol the perimeter twice` | Multi-agent mode: split the perimeter between two robots; each completes 2 loops on their half | Requires `squad:=true` (default); each robot gets a contiguous half |
+| `both robots patrol the perimeter twice in warehouse` | Multi-agent mode: split the perimeter between two robots; each completes 2 loops on their half | Requires `squad:=true` (default); each robot gets a contiguous half |
 
 **Key rule:** Commands for mapping and navigation **must include an explicit map name**. The LLM will reject vague commands like `"start mapping"` or `"patrol"` without a name.
 

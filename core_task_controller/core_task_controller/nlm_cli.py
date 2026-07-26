@@ -288,10 +288,10 @@ class _Screen:
         self._draw_text(row, '║ MISSIONS (plain English):', 0)
         row += 1
         missions = [
-            'patrol the perimeter twice',
+            'patrol the perimeter twice in warehouse',
             'start building a map called mapname',
             'collect waypoints',
-            'both robots patrol the perimeter twice'
+            'both robots patrol the perimeter twice in warehouse'
         ]
         for mission in missions:
             line = '║   • ' + mission.ljust(w - 8) + '║'

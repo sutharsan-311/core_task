@@ -119,7 +119,7 @@ def test_abort_phrases_recognised(text):
 
 
 @pytest.mark.parametrize('text', [
-    'patrol the perimeter twice', 'start mapping', 'stop mapping the warehouse',
+    'patrol the perimeter twice in warehouse', 'start mapping', 'stop mapping the warehouse',
     'go to the loading dock', 'abort the sandwich order', '',
 ])
 def test_missions_are_not_treated_as_abort(text):

@@ -30,7 +30,7 @@ Prompt  →  LLM  →  Validated JSON  →  Executor FSM  →  Nav2/Gazebo
 - Checks returned JSON against a schema: mission type, robot(s), waypoints, speeds
 - Validates safety: waypoints must be in known maps, speeds within limits (0–0.5 m/s), valid command sequences
 - Drops malformed or unsafe missions before any wheel turns
-- Example: a prompt to "go 100 m/s" is rejected; one to "patrol the perimeter twice" passes
+- Example: a prompt to "go 100 m/s" is rejected; one to "patrol the perimeter twice in warehouse" passes
 
 **3. Deterministic Executor (`core_task_controller/operation_controller.py`)**
 - A finite-state machine (FSM) that reads validated JSON and issues concrete commands
