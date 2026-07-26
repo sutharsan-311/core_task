@@ -156,61 +156,154 @@ Give it a few seconds for Gazebo and Nav2 to settle. Stack logs go to
 > The two-robot default is heavy (two full Nav2 stacks + RViz). On a modest
 > laptop, prefer `squad:=false` while iterating.
 
-## Manual Robot Control (Teleop)
+## The NLM Prompt Interface
 
-Keyboard teleop is **enabled by default**. Use arrow keys anytime to manually drive the robot:
+When you run `./run.sh`, the nlm_cli opens an interactive prompt:
 
-```bash
-./run.sh                    # teleop on by default
-./run.sh teleop:=false      # disable if you don't want it
+```
+╔════════════════════════════════════════════════════════════════╗
+║                  MISSIONS · CONTROLS · STATUS                  ║
+╠════════════════════════════════════════════════════════════════╣
+║ MISSIONS:                                                      ║
+║   patrol the perimeter twice                                   ║
+║   start building a map called mapname                          ║
+║   collect waypoints                                            ║
+║   patrol by squad                                              ║
+║                                                                ║
+║ CONTROLS:  ↑ ↓ ← → to drive (arrow keys)                      ║
+║            Ctrl+C to stop & reset                              ║
+║                                                                ║
+║ STATUS: idle, ready for mission                               ║
+╚════════════════════════════════════════════════════════════════╝
+
+Type a mission in plain English:
 ```
 
-Once running, use **arrow keys** to drive:
+### At the Prompt
+
+**Type your mission**, e.g.:
+```
+patrol the perimeter twice
+```
+
+**What happens:**
+1. Your text is sent to the LLM (Bedrock/Claude/OpenAI)
+2. The LLM responds with JSON (or a rejection message like "Please specify a map name")
+3. The JSON is validated
+4. **Status updates** — one-line feedback showing the result:
+   - ✓ Success: mission accepted, executor starting
+   - ✗ Error: invalid mission, try again
+5. **Gazebo/RViz** show the robot executing the mission
+
+**Use arrow keys anytime** to manually drive during SLAM mapping (see Teleop below).
+
+## Manual Robot Control (Teleop)
+
+Keyboard teleop is **integrated into nlm_cli** and enabled by default:
+
+```bash
+./run.sh                    # teleop on by default (arrow keys work at prompt)
+./run.sh teleop:=false      # disable if you don't want keyboard control
+```
+
+### Driving with Arrow Keys
+
+While at the NLM prompt (anytime, even mid-mission):
+
 - `↑` → forward
 - `↓` → backward
 - `←` → turn left
 - `→` → turn right
-- `Ctrl+C` → stop
 
-Useful for:
-- Manually exploring during `"start building a map"` (SLAM mode)
-- Quick testing without LLM
-- Examiner-driven manual control
+The robot continues moving as long as you hold a key. Release the key to stop (200ms timeout).
+
+### When to use Teleop
+
+- **During SLAM mapping** — manually explore while the map builds
+- **Testing** — drive without LLM involvement
+- **Examiner demo** — manual control for interactive exploration
+- **Map collection** — position the robot before clicking waypoints
 
 ## Commands to issue
 
-At the prompt, type a mission in plain English. Examples:
+At the prompt, type a mission in plain English. The LLM converts your command to structured JSON, a validator checks it, and then the executor runs it deterministically.
 
-| You type | Mission |
-|---|---|
-| `patrol the warehouse perimeter twice` | navigate the loop 2× |
-| `start building a map` | SLAM mapping |
-| `collect goal points for warehouse` | capture perimeter waypoints |
-| `both robots patrol, split the perimeter between them` | squad patrol |
+### Mission Commands (sent to LLM)
 
-A handful of words are handled locally and go straight to the executor, never
-through the LLM:
+| Command Example | What it does | Notes |
+|---|---|---|
+| `patrol the perimeter twice` | Navigate the saved perimeter loop 2 times and return to dock | Requires a map and perimeter file; loops can be 1, 2, 3, etc. |
+| `patrol the perimeter 3 times` | Navigate the loop 3 times | Works for any number of loops |
+| `start building a map called floor2` | Begin SLAM mapping under the name "floor2" | **Must specify a map name**; use arrow keys to manually drive the robot around |
+| `start building a map` | **Rejected** — LLM requires explicit map name | Reply with: "Please specify a map name (e.g., 'start building a map called floor2')" |
+| `collect waypoints` | Collect perimeter waypoints for the default "warehouse" map | Click points in RViz (`Publish Point` or `2D Goal Pose`); each point appears as a green marker |
+| `capture the perimeter waypoints` | Same as above | Alternative phrasing |
+| `both robots patrol the perimeter twice` | Multi-agent mode: split the perimeter between two robots; each completes 2 loops on their half | Requires `squad:=true` (default); each robot gets a contiguous half |
 
-| Word | Effect |
-|---|---|
-| `abort`, `stop`, `return to start`, `go home` | stop the patrol, drive back to dock |
-| `done`, `save` | finish mapping or goal collection |
-| `kill` | tear the whole stack down (runs `kill.sh`) |
-| `/quit` | leave the prompt (also tears the stack down) |
+**Key rule:** Commands for mapping and navigation **must include an explicit map name**. The LLM will reject vague commands like `"start mapping"` or `"patrol"` without a name.
+
+### Local Commands (no LLM required)
+
+These are intercepted by `nlm_cli` and sent directly to the executor:
+
+| Command | Effect | When to use |
+|---|---|---|
+| `abort`, `stop`, `return to start`, `go home` | Stop the current patrol, drive back to dock immediately | Interrupt a running navigation mission |
+| `done`, `save` | Finish mapping or waypoint collection; save the result | After you've manually driven the map or clicked enough waypoints |
+| `kill` | Tear down the entire stack (Gazebo, Nav2, ROS, runs `kill.sh`) | Hard shutdown before a new run |
+| `/quit` | Leave the prompt and shut down the stack | Graceful exit |
+
+## How it works: command to execution
+
+```
+Your command (NLM terminal)
+         ↓
+    LLM provider (Bedrock / Claude / OpenAI)
+    converts to JSON: {"mode": "navigation", "map_name": "warehouse", "loops": 2}
+         ↓
+    Validator checks schema + sanity
+         ↓
+    Operation_controller FSM executes the mission deterministically
+         ↓
+    Nav2 drives the robot(s); Gazebo/RViz show the result
+```
+
+**Key point:** The LLM is a one-shot converter, not a closed-loop controller. Once the JSON is validated, the executor takes over completely. The same JSON always produces the same behaviour.
 
 ## What to expect
 
-- **Mapping** — Gazebo opens on the warehouse, the robot drives under SLAM as
-  you send it around, and RViz shows the map filling in. Say `done` to save it.
-- **Collect goals** — click points in RViz (`Publish Point` or `2D Goal Pose`);
-  each one drops a green marker and is written to the perimeter file immediately.
-  Say `done` to finish.
-- **Patrol** — the robot localises, then follows the saved perimeter loop for the
-  requested number of laps and returns to its dock. The waypoints show as green
-  markers in RViz for the whole run.
-- **Squad** — a second robot spawns, the perimeter splits front/back between the
-  two, and both patrol their half. Each robot's frames, model, laser, and
-  waypoints appear in the one RViz window.
+### Mapping (`start building a map called mapname`)
+- Gazebo opens on the warehouse scene
+- The robot is placed at its spawn point
+- You manually drive it with **arrow keys** to explore and build the map
+- RViz displays the map filling in real-time via SLAM
+- Say `done` to close SLAM and save the map file as `mapname_perimeter.yaml`
+- The perimeter file starts empty (no waypoints yet)
+
+### Collect Goals (`collect waypoints` or `capture the perimeter waypoints`)
+- The robot localizes on an existing map
+- RViz is ready to receive waypoint clicks
+- Click in RViz using:
+  - **2D Goal Pose** (top toolbar, drag to set position + heading)
+  - **Publish Point** (top toolbar, click once for position; uses current robot heading)
+- Each click drops a **green marker** and is written to `mapname_perimeter.yaml` immediately
+- Say `done` to finish collection
+- The perimeter file now contains the dock (starting pose) and all waypoint poses
+
+### Patrol (`patrol the perimeter N times`)
+- The robot localizes on the saved map
+- It navigates to the first waypoint, then follows the entire perimeter loop N times
+- After the last loop, it drives back to the dock and docks
+- The waypoints display as green markers throughout the run
+- Console shows progress: "Waypoint 1/5", "Loop 1/2 complete", etc.
+
+### Squad Patrol (`both robots patrol the perimeter N times`)
+- **robot1** and **robot2** spawn in Gazebo at their dock positions
+- The perimeter is split: robot1 takes the front half, robot2 takes the back half
+- Both robots run their half of the loop N times in parallel
+- The squad_coordinator synchronizes them so they complete loops together
+- All robot frames, models, lasers, and waypoints appear in one RViz window
+- Both robots return to their docks after the final loop
 
 ## Vision detect-and-follow (Challenge 3)
 
