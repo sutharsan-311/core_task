@@ -56,6 +56,13 @@ class TestMissionValidator:
         result = validate_and_explain("not a dict")
         assert result["valid"] is False
 
+    def test_valid_find_person_mission_no_loops(self):
+        """find_person needs only mode and map_name, like mapping."""
+        mission = {"mode": "find_person", "map_name": "warehouse"}
+        result = validate_and_explain(mission)
+        assert result["valid"] is True
+        assert result["mission"] == mission
+
     def test_mission_field_preserved_on_valid(self):
         """Valid mission is returned unchanged."""
         mission = {"mode": "collect_goals", "map_name": "office"}

@@ -35,7 +35,7 @@ class TargetDetector(Node):
 
         self.target = self.declare_parameter('target_class', 'person').value
         self.conf = self.declare_parameter('conf', 0.35).value
-        model_path = self.declare_parameter('model', 'yolov8n.pt').value
+        model_path = self.declare_parameter('model', 'yolo26n.pt').value
         image_topic = self.declare_parameter(
             'image_topic', '/camera/image_raw').value
         rate = self.declare_parameter('rate_hz', 10.0).value

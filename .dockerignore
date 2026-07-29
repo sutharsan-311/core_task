@@ -10,3 +10,8 @@ src/core_task/logs/
 **/__pycache__/
 **/*.pyc
 **/.pytest_cache/
+
+# Not needed inside the image; excluding it means editing the Dockerfile
+# doesn't invalidate the COPY-and-onward layer cache below it.
+Dockerfile
+docker-run.sh

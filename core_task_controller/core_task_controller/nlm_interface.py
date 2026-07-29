@@ -10,7 +10,6 @@ LLM proposes; this node validates; the executor (Operation_controller) decides.
 The LLM is never in the control loop.
 """
 import json
-import os
 
 import rclpy
 from rclpy.node import Node
@@ -23,9 +22,14 @@ from core_task_controller.mission_validator import validate_and_explain
 class NaturalLanguageMissionInterface(Node):
     """ROS 2 node bridging natural language to validated mission JSON."""
 
-    def __init__(self):
-        """Wire up the LLM client, publishers, and the command subscription."""
-        super().__init__('nlm_interface')
+    def __init__(self, **kwargs):
+        """Wire up the LLM client, publishers, and the command subscription.
+
+        **kwargs forwards to Node.__init__ (e.g. parameter_overrides), so
+        tests can force params like `provider` without touching the
+        environment.
+        """
+        super().__init__('nlm_interface', **kwargs)
 
         model = self.declare_parameter('model', None).value
         temperature = self.declare_parameter('temperature', 0.3).value

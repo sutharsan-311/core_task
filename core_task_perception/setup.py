@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'target_detector = core_task_perception.target_detector:main',
             'target_mover = core_task_perception.target_mover:main',
+            'person_approach = core_task_perception.person_approach:main',
         ],
     },
 )

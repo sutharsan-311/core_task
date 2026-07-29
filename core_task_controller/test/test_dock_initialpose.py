@@ -44,7 +44,7 @@ def collector(ros, tmp_path):
 
 
 def _fake_transform(x, y, yaw):
-    """A stand-in for tf_buffer.lookup_transform's TransformStamped."""
+    """Stand in for tf_buffer.lookup_transform's TransformStamped."""
     import math
     return SimpleNamespace(transform=SimpleNamespace(
         translation=SimpleNamespace(x=x, y=y, z=0.0),

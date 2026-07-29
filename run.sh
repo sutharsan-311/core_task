@@ -9,6 +9,7 @@
 #   ./run.sh                # single robot
 #   ./run.sh squad:=true    # add robot2 + the squad coordinator
 #   ./run.sh nlm:=false     # skip the LLM backend (then use ros2 topic pub)
+#   ./run.sh vision:=false  # skip target_detector/person_approach (find_person)
 #
 # Needs AWS credentials + AWS_REGION for the Bedrock LLM front-end. Stack logs go
 # to src/core_task/logs/ (path printed at startup) so they don't corrupt the prompt.

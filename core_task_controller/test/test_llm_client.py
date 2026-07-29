@@ -19,8 +19,15 @@ class TestLlmClient:
 
     @pytest.fixture
     def llm(self, mock_client):
-        """LlmClient instance with a mocked Bedrock client."""
-        return LlmClient(api_client=mock_client)
+        """LlmClient instance with a mocked Bedrock client.
+
+        provider is explicit (not auto-detected) so this test is hermetic -
+        without it, __init__ still calls _detect_provider() even though
+        api_client is given, so the test's outcome would depend on whichever
+        AWS_BEARER_TOKEN_BEDROCK/ANTHROPIC_API_KEY/OPENAI_API_KEY happen to be
+        set in the ambient environment.
+        """
+        return LlmClient(api_client=mock_client, provider="bedrock")
 
     def test_generate_mission_valid_navigation(self, llm, mock_client):
         """Valid navigation JSON from the model is extracted and returned."""

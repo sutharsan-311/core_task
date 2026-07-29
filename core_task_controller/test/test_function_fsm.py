@@ -66,3 +66,34 @@ def test_abort_is_noop_outside_perimeter():
     # Guarded in the node too, but the table must not invent a transition.
     for p in (Phase.MAPPING, Phase.IDLE, Phase.RETURN_TO_DOCK, Phase.DOCKED):
         assert next_phase(p, Event.ABORT) == p
+
+
+def test_find_person_happy_path_person_found_while_spinning():
+    seq = [Event.SUBMIT_NAV, Event.INIT_NAV, Event.SEARCH_READY,
+           Event.PERSON_FOUND, Event.PERSON_REACHED, Event.ADVANCE,
+           Event.NAV_CLOSED]
+    assert run(seq) == Phase.IDLE
+
+
+def test_find_person_falls_back_to_patrol_after_spin():
+    seq = [Event.SUBMIT_NAV, Event.INIT_NAV, Event.SEARCH_READY,
+           Event.SPIN_DONE, Event.PERSON_FOUND, Event.PERSON_REACHED,
+           Event.ADVANCE, Event.NAV_CLOSED]
+    assert run(seq) == Phase.IDLE
+
+
+def test_find_person_not_found_faults():
+    # Neither the spin nor the patrol found anyone; the node enqueues ERROR.
+    seq = [Event.SUBMIT_NAV, Event.INIT_NAV, Event.SEARCH_READY,
+           Event.SPIN_DONE, Event.ERROR]
+    assert run(seq) == Phase.FAULT
+
+
+def test_abort_from_search_and_approach_returns_to_dock():
+    for p in (Phase.SEARCH_SPIN, Phase.SEARCH_PATROL, Phase.APPROACHING):
+        assert next_phase(p, Event.ABORT) == Phase.RETURN_TO_DOCK
+
+
+def test_arrived_advances_straight_to_close_navigation():
+    # No RETURN_TO_DOCK/DOCKED detour - the robot stays put near the person.
+    assert next_phase(Phase.ARRIVED, Event.ADVANCE) == Phase.CLOSE_NAVIGATION

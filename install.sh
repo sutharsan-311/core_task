@@ -27,8 +27,16 @@ rosdep install --from-paths src --ignore-src -r -y
 # (see Dockerfile).
 sudo apt-get install -y ros-humble-diagnostic-updater
 
-echo ">> Python dependencies (Bedrock + vision)"
-python3 -m pip install boto3 -r src/core_task/core_task_perception/requirements.txt
+echo ">> Python dependencies (Bedrock/Claude/OpenAI + vision)"
+python3 -m pip install boto3 anthropic openai \
+  -r src/core_task/core_task_perception/requirements.txt
+
+# ultralytics/torch pulls setuptools up to a version colcon-core rejects, and
+# separately the system `packaging` package (apt, Ubuntu 22.04) predates a
+# function setuptools' egg_info step needs - either one alone crashes
+# colcon build with a canonicalize_version() TypeError. See Dockerfile for
+# the same fix and how it was diagnosed.
+python3 -m pip install "setuptools<80" "packaging>=22,<26"
 
 echo ">> Build workspace"
 if ! colcon build --symlink-install; then

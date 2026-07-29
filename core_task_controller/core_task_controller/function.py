@@ -6,7 +6,8 @@ from enum import Enum, auto
 
 import yaml
 
-VALID_MODES = ('mapping', 'navigation', 'collect_goals', 'squad_navigation')
+VALID_MODES = ('mapping', 'navigation', 'collect_goals', 'squad_navigation',
+               'find_person')
 
 
 def split_waypoints(waypoints, n, i):
@@ -136,6 +137,10 @@ class Phase(Enum):
     START_NAVIGATION = auto()
     PERIMETER = auto()
     PERIMETER_COMPLETED = auto()
+    SEARCH_SPIN = auto()
+    SEARCH_PATROL = auto()
+    APPROACHING = auto()
+    ARRIVED = auto()
     RETURN_TO_DOCK = auto()
     DOCKED = auto()
     CLOSE_NAVIGATION = auto()
@@ -157,6 +162,10 @@ class Event(Enum):
     PERIMETER_SAVED = auto()
     NAV_READY = auto()
     LOOPS_DONE = auto()
+    SEARCH_READY = auto()
+    SPIN_DONE = auto()
+    PERSON_FOUND = auto()
+    PERSON_REACHED = auto()
     DOCK_REACHED = auto()
     NAV_CLOSED = auto()
     ADVANCE = auto()
@@ -189,6 +198,21 @@ _TRANSITIONS = {
     # node cancels the live waypoint goal first; here we just redirect.
     (Phase.PERIMETER, Event.ABORT): Phase.RETURN_TO_DOCK,
     (Phase.PERIMETER_COMPLETED, Event.ADVANCE): Phase.RETURN_TO_DOCK,
+    # find_person shares navigation's startup (same perimeter/map/localization
+    # setup) and only forks once Nav2 is ready: spin in place first, fall back
+    # to walking the perimeter as a search route, then close in once seen.
+    (Phase.START_NAVIGATION, Event.SEARCH_READY): Phase.SEARCH_SPIN,
+    (Phase.SEARCH_SPIN, Event.PERSON_FOUND): Phase.APPROACHING,
+    (Phase.SEARCH_SPIN, Event.SPIN_DONE): Phase.SEARCH_PATROL,
+    (Phase.SEARCH_PATROL, Event.PERSON_FOUND): Phase.APPROACHING,
+    (Phase.SEARCH_SPIN, Event.ABORT): Phase.RETURN_TO_DOCK,
+    (Phase.SEARCH_PATROL, Event.ABORT): Phase.RETURN_TO_DOCK,
+    (Phase.APPROACHING, Event.ABORT): Phase.RETURN_TO_DOCK,
+    (Phase.APPROACHING, Event.PERSON_REACHED): Phase.ARRIVED,
+    # No RETURN_TO_DOCK here - the robot stays put near the person. Jump
+    # straight to CLOSE_NAVIGATION, which only pauses the Nav2/AMCL lifecycle
+    # (no goal sent) before returning to IDLE.
+    (Phase.ARRIVED, Event.ADVANCE): Phase.CLOSE_NAVIGATION,
     (Phase.RETURN_TO_DOCK, Event.DOCK_REACHED): Phase.DOCKED,
     (Phase.DOCKED, Event.ADVANCE): Phase.CLOSE_NAVIGATION,
     (Phase.CLOSE_NAVIGATION, Event.NAV_CLOSED): Phase.IDLE,

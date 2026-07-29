@@ -237,6 +237,20 @@ def generate_launch_description():
             '-x', x_pose, '-y', y_pose, '-z', '0.01', '-Y', yaw,
         ])
 
+    # The detect-and-follow target. Placed 3m down the same aisle robot1
+    # spawns facing (yaw above), so it's in camera view from the start -
+    # matches the camera-pitch comment's intent above. Entity name matches
+    # target_mover.py's default model_name so it works with no override.
+    # Stands still until target_mover is also run (see model.sdf).
+    person_target_sdf = os.path.join(
+        pkg_share, 'models', 'person_target', 'model.sdf')
+    spawn_person = Node(
+        package='gazebo_ros', executable='spawn_entity.py', output='screen',
+        arguments=[
+            '-entity', 'target_person', '-file', person_target_sdf,
+            '-x', '3.561', '-y', '2.182', '-z', '0.0', '-Y', '0.0',
+        ])
+
     # Optional second robot for the multi-agent challenge. Namespaced under
     # /robot2 with a prefixed TF tree so it does not collide with robot 1;
     # drive it via /robot2/cmd_vel. Off by default so single-robot demos are
@@ -288,5 +302,6 @@ def generate_launch_description():
     ld.add_action(robot_state_publisher)
     ld.add_action(spawn_turtlebot)
     ld.add_action(spawn_robot2)
+    ld.add_action(spawn_person)
     ld.add_action(robot2_rsp)
     return ld

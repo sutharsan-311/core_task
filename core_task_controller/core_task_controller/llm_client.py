@@ -6,20 +6,21 @@ import re
 
 SYSTEM_PROMPT = """You are a mission planner for a warehouse robot.
 
-The robot can execute one of four mission types:
+The robot can execute one of five mission types:
 1. "mapping" - Drive the robot while building a map with SLAM
 2. "navigation" - Navigate an existing map, following a perimeter loop
 3. "collect_goals" - Collect waypoint markers for the perimeter
 4. "squad_navigation" - Split the perimeter loop across TWO robots (one drives
    the front half, the other the back half)
+5. "find_person" - Search the map for a person and drive up close to them
 
-When a user gives a command that is genuinely one of those three missions,
+When a user gives a command that is genuinely one of those missions,
 respond with ONLY a JSON object (inside ```json blocks) describing it. Never
 include explanations outside the JSON block.
 
 The JSON must have this exact structure:
 {
-  "mode": "mapping" | "navigation" | "collect_goals" | "squad_navigation",
+  "mode": "mapping" | "navigation" | "collect_goals" | "squad_navigation" | "find_person",
   "map_name": "<EXPLICIT map name — REQUIRED. User MUST specify it. No defaults.>",
   "loops": <integer >= 1, ONLY for navigation and squad_navigation modes>
 }
@@ -48,6 +49,11 @@ Examples:
 {"mode": "squad_navigation", "map_name": "warehouse", "loops": 1}
 ```
 
+- User: "Find the person"
+  Response: ```json
+{"mode": "find_person", "map_name": "warehouse"}
+```
+
 This drives a real robot, so a wrong mission is worse than no mission.
 
 CRITICAL: For mapping/navigation/collect_goals missions, the user MUST explicitly
@@ -55,7 +61,7 @@ specify the map_name. If they say "start building a map" without a name, REJECT 
 with a message like "Please specify a map name (e.g., 'start building a map called
 floor2')". Never guess a default map name.
 
-If the command is NOT one of the four missions above - a question, a greeting,
+If the command is NOT one of the five missions above - a question, a greeting,
 gibberish, anything this robot cannot do, OR a mapping/navigation command missing
 the required map_name - do NOT output a JSON block. Reply with one short sentence
 saying you cannot map it to a mission. Never guess or produce JSON without complete
@@ -65,7 +71,7 @@ information.
   Response: That is a question, not a robot mission.
 
 - User: "Make me a sandwich"
-  Response: This robot only maps, navigates, and collects waypoints.
+  Response: This robot only maps, navigates, collects waypoints, and finds people.
 
 When the command IS a mission, output the JSON block only, with no reasoning or
 explanation outside it.
@@ -129,7 +135,8 @@ class LlmClient:
             import anthropic
             return anthropic.Anthropic()
         except ImportError:
-            raise RuntimeError("anthropic package not installed. Install with: pip install anthropic")
+            raise RuntimeError(
+                "anthropic package not installed. Install with: pip install anthropic")
 
     def _create_openai_client(self):
         """Create OpenAI client."""
@@ -213,7 +220,14 @@ class LlmClient:
             }
 
         json_str = json_match.group(1)
-        mission = json.loads(json_str)
+        try:
+            mission = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            return {
+                "success": False,
+                "mission": None,
+                "reasoning": f"LLM response had invalid JSON: {e}"
+            }
 
         # Minimal validation (full validation happens in validator)
         if not isinstance(mission, dict):

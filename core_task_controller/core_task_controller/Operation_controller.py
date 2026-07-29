@@ -8,6 +8,7 @@ function.py; this node only turns runtime conditions into events and performs
 side effects. See docs/superpowers/specs/2026-07-13-operation-controller-design.md.
 """
 import json
+import math
 import os
 import signal
 import subprocess
@@ -21,7 +22,7 @@ from nav2_msgs.srv import LoadMap, ManageLifecycleNodes
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import MarkerArray
@@ -69,6 +70,17 @@ class OperationController(Node):
         self._aborting = False           # suppress the cancelled waypoint result
         self._save_name = None           # operator's map name for this save only
 
+        # find_person: search-phase detection debounce and approach-phase
+        # lost-target timeout. Params so both can be tuned without a rebuild.
+        self._spin_targets = []
+        self._spin_index = 0
+        self._found_streak = 0
+        self._found_streak_needed = self.declare_parameter(
+            'found_streak', 3).value
+        self._lost_since = None
+        self.lost_target_timeout = self.declare_parameter(
+            'lost_target_timeout', 5.0).value
+
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.feedback_pub = self.create_publisher(
             String, 'operation_feedback', latched)
@@ -76,6 +88,12 @@ class OperationController(Node):
             PoseWithCovarianceStamped, 'initialpose', 10)
         # Latched so RViz shows this robot's perimeter for the whole run.
         self.marker_pub = self.create_publisher(MarkerArray, 'waypoints', latched)
+        # find_person: hand cmd_vel off to person_approach for the final
+        # close-in, and hear back once it reports arrival.
+        self.approach_enable_pub = self.create_publisher(Bool, 'approach_enable', 10)
+        self.create_subscription(
+            String, 'target_detection', self._on_target_detection, 10)
+        self.create_subscription(Bool, 'approach_done', self._on_approach_done, 10)
 
         # Perimeter capture lives in the standalone goal_collector node, driven
         # by /submit_mission + /operation_feedback. This node owns the FSM only.
@@ -143,9 +161,13 @@ class OperationController(Node):
             self.enqueue(Event.SUBMIT_INVALID)
             return
         self.mission = mission
+        # find_person shares navigation's startup exactly (same perimeter,
+        # localization, and Nav2 activation); it only forks later, once
+        # Nav2 is ready (see _after_nav_startup).
         self.enqueue({'mapping': Event.SUBMIT_MAPPING,
                       'navigation': Event.SUBMIT_NAV,
-                      'collect_goals': Event.SUBMIT_GOALS}[mission['mode']])
+                      'collect_goals': Event.SUBMIT_GOALS,
+                      'find_person': Event.SUBMIT_NAV}[mission['mode']])
 
     def _on_save_map(self, msg):
         """'save <name>' during mapping: set the map name, then finish + save."""
@@ -175,17 +197,22 @@ class OperationController(Node):
         if self.phase == Phase.RETURN_TO_DOCK:
             response.success, response.message = True, 'already returning to dock'
             return response
-        if self.phase != Phase.PERIMETER:
+        if self.phase not in (Phase.PERIMETER, Phase.SEARCH_SPIN,
+                              Phase.SEARCH_PATROL, Phase.APPROACHING):
             response.success = False
             response.message = 'nothing to abort in phase %s' % self.phase.name
             return response
 
         self.get_logger().warn('ABORT requested - returning to dock')
         self._aborting = True
-        # Cancel the in-flight waypoint goal, THEN redirect. Enqueuing ABORT from
-        # the cancel callback serialises stop-then-go-home, so the dock goal is
-        # not sent while the waypoint goal is still active.
-        if self._nav_goal_handle is not None:
+        if self.phase == Phase.APPROACHING:
+            # No live Nav2 goal here - person_approach owns cmd_vel instead.
+            self._disable_approach()
+            self.enqueue(Event.ABORT)
+        elif self._nav_goal_handle is not None:
+            # Cancel the in-flight goal, THEN redirect. Enqueuing ABORT from
+            # the cancel callback serialises stop-then-go-home, so the dock
+            # goal is not sent while the search goal is still active.
             self._nav_goal_handle.cancel_goal_async().add_done_callback(
                 lambda _f: self.enqueue(Event.ABORT))
         else:
@@ -223,6 +250,7 @@ class OperationController(Node):
             self._nav_goal_handle.cancel_goal_async()
             self._nav_goal_handle = None
         self._aborting = False
+        self._disable_approach()   # harmless no-op if it wasn't running
         self._stop_slam()
         self.slam_proc = None
         for mgr in (self.nav_mgr, self.loc_mgr):
@@ -236,7 +264,8 @@ class OperationController(Node):
         if phase == Phase.INITIALIZATION:
             self.enqueue({'mapping': Event.INIT_MAPPING,
                           'navigation': Event.INIT_NAV,
-                          'collect_goals': Event.INIT_GOALS}[self.mission['mode']])
+                          'collect_goals': Event.INIT_GOALS,
+                          'find_person': Event.INIT_NAV}[self.mission['mode']])
         elif phase == Phase.START_MAPPING:
             self._start_slam()
         elif phase == Phase.SAVING:
@@ -263,6 +292,17 @@ class OperationController(Node):
                 self.enqueue(Event.LOOPS_DONE)
             else:
                 self._send_current_waypoint()
+        elif phase == Phase.SEARCH_SPIN:
+            self._start_spin()
+        elif phase == Phase.SEARCH_PATROL:
+            self.wp_index = 0
+            self._aborting = False
+            if not self.waypoints:       # nothing to search along
+                self.get_logger().error(
+                    'no perimeter waypoints to search along')
+                self.enqueue(Event.ERROR)
+            else:
+                self._send_current_waypoint()
         elif phase == Phase.RETURN_TO_DOCK:
             self._send_goal(self.dock, self._on_dock_result)
         elif phase == Phase.CLOSE_NAVIGATION:
@@ -283,7 +323,7 @@ class OperationController(Node):
                 self.slam_proc = None
                 self.enqueue(Event.SLAM_CLOSED)
         elif p in (Phase.MAP_SAVED_SUCCESSFULLY, Phase.GOAL_POINTS_SAVED,
-                   Phase.PERIMETER_COMPLETED, Phase.DOCKED):
+                   Phase.PERIMETER_COMPLETED, Phase.DOCKED, Phase.ARRIVED):
             self.enqueue(Event.ADVANCE)
 
     # ---- slam / map -----------------------------------------------------
@@ -389,7 +429,13 @@ class OperationController(Node):
 
     def _after_nav_startup(self, ok):
         # Nav2 is active only now, so it is safe to send the first goal.
-        self.enqueue(Event.NAV_READY if ok else Event.ERROR)
+        if not ok:
+            self.enqueue(Event.ERROR)
+            return
+        if self.mission['mode'] == 'find_person':
+            self.enqueue(Event.SEARCH_READY)
+        else:
+            self.enqueue(Event.NAV_READY)
 
     def _after_loc_for_goalpoints(self, ok):
         if not ok:
@@ -484,6 +530,90 @@ class OperationController(Node):
     def _send_current_waypoint(self):
         self._send_goal(self.waypoints[self.wp_index], self._on_wp_result)
 
+    # ---- find_person: search ---------------------------------------------
+    def _start_spin(self):
+        """Queue 4 in-place quarter-turns around the robot's current pose."""
+        self._aborting = False
+        pose = self._lookup_pose()
+        if pose is None:
+            self.get_logger().error('cannot localize for search spin')
+            self.enqueue(Event.ERROR)
+            return
+        x, y, yaw = pose
+        self._spin_targets = [[x, y, yaw + math.radians(90 * k)]
+                              for k in range(1, 5)]
+        self._spin_index = 0
+        self._send_goal(self._spin_targets[0], self._on_spin_result)
+
+    def _on_spin_result(self, future):
+        self._nav_goal_handle = None
+        if self._aborting:
+            return
+        if future.result().status != 4:      # 4 == STATUS_SUCCEEDED
+            self.enqueue(Event.ERROR)
+            return
+        self._spin_index += 1
+        if self._spin_index >= len(self._spin_targets):
+            self.enqueue(Event.SPIN_DONE)
+        else:
+            self._send_goal(self._spin_targets[self._spin_index],
+                            self._on_spin_result)
+
+    # ---- find_person: detection watch + approach handoff ------------------
+    def _on_target_detection(self, msg):
+        report = json.loads(msg.data)
+        if self.phase in (Phase.SEARCH_SPIN, Phase.SEARCH_PATROL):
+            self._found_streak = self._found_streak + 1 if report['found'] else 0
+            if self._found_streak >= self._found_streak_needed:
+                self._found_streak = 0
+                self._on_person_found()
+        elif self.phase == Phase.APPROACHING:
+            if report['found']:
+                self._lost_since = None
+                return
+            now = self.get_clock().now()
+            if self._lost_since is None:
+                self._lost_since = now
+            elif (now - self._lost_since).nanoseconds / 1e9 > self.lost_target_timeout:
+                self.get_logger().error(
+                    'lost the target for over %.1fs during approach'
+                    % self.lost_target_timeout)
+                self._disable_approach()
+                self.enqueue(Event.ERROR)
+
+    def _on_person_found(self):
+        # Cancel whatever search goal is live, then hand off to the approach
+        # node. _aborting suppresses the cancelled goal's own result callback
+        # (_on_spin_result/_on_wp_result) the same way it does for ABORT -
+        # otherwise that CANCELED result would fire Event.ERROR right after
+        # we just found the person.
+        self._aborting = True
+        if self._nav_goal_handle is not None:
+            self._nav_goal_handle.cancel_goal_async().add_done_callback(
+                lambda _f: self._start_approach())
+        else:
+            # ponytail: narrow race - if a search goal was sent but not yet
+            # accepted (_nav_goal_handle still None), it isn't cancelled here
+            # and Nav2 may briefly keep driving it alongside person_approach.
+            # Self-resolves once that goal completes (a few seconds, worst
+            # case); tighten by tracking in-flight sends if this ever bites.
+            self._start_approach()
+
+    def _start_approach(self):
+        self._nav_goal_handle = None
+        self._aborting = False
+        self._lost_since = None
+        self.approach_enable_pub.publish(Bool(data=True))
+        self.enqueue(Event.PERSON_FOUND)
+
+    def _disable_approach(self):
+        self.approach_enable_pub.publish(Bool(data=False))
+
+    def _on_approach_done(self, msg):
+        if self.phase == Phase.APPROACHING and msg.data:
+            self._disable_approach()
+            self.enqueue(Event.PERSON_REACHED)
+
     def _send_goal(self, pose, result_cb):
         """pose is [x, y, yaw], straight from the perimeter file."""
         if not self.nav_client.wait_for_server(timeout_sec=5.0):
@@ -522,6 +652,15 @@ class OperationController(Node):
             self.enqueue(Event.ERROR)
             return
         self.wp_index += 1
+        if self.phase == Phase.SEARCH_PATROL:
+            # One pass over the perimeter as a search route, not a patrol
+            # loop: exhausting it without a PERSON_FOUND means nobody's there.
+            if self.wp_index >= len(self.waypoints):
+                self.get_logger().error('person not found after full patrol')
+                self.enqueue(Event.ERROR)
+            else:
+                self._send_current_waypoint()
+            return
         if self.wp_index >= len(self.waypoints):
             self.wp_index = 0
             self.loop_index += 1

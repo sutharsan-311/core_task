@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 import rclpy
+from rclpy.parameter import Parameter
 from std_msgs.msg import String
 
 
@@ -26,12 +27,20 @@ def ros():
 
 @pytest.fixture
 def node(ros):
-    """nlm_interface with a mocked Bedrock client and mocked publishers."""
+    """nlm_interface with a mocked Bedrock client and mocked publishers.
+
+    provider is forced to 'bedrock' via the ROS param rather than left to
+    auto-detect: LlmClient._detect_provider() reads real env vars
+    (AWS_BEARER_TOKEN_BEDROCK etc.), so without this override the test's
+    outcome would depend on whatever happens to be set in the environment
+    running it, not just the boto3.client patch below.
+    """
     with patch('boto3.client'):
         from core_task_controller.nlm_interface import (
             NaturalLanguageMissionInterface,
         )
-        n = NaturalLanguageMissionInterface()
+        n = NaturalLanguageMissionInterface(
+            parameter_overrides=[Parameter('provider', value='bedrock')])
     n.submit_pub = Mock()
     n.feedback_pub = Mock()
     yield n

@@ -36,10 +36,10 @@ from a reference, it's cited below.
 | Package | Repo | License | Used for |
 |---|---|---|---|
 | boto3 / botocore (AWS SDK) | https://github.com/boto/boto3 | Apache-2.0 | Calling AWS Bedrock (the LLM stage) |
-| Ultralytics YOLO — `yolov8n.pt` + inference | https://github.com/ultralytics/ultralytics | **AGPL-3.0** | Target detection (Challenge 3) |
+| Ultralytics YOLO — `yolo26n.pt` + inference | https://github.com/ultralytics/ultralytics | **AGPL-3.0** | Target detection (Challenge 3) |
 | NumPy (pinned `<2` for Humble `cv_bridge`) | https://github.com/numpy/numpy | BSD-3-Clause | Array math in the vision pipeline |
 
-> **Note on Ultralytics / AGPL-3.0.** YOLOv8 is copyleft (AGPL-3.0), not
+> **Note on Ultralytics / AGPL-3.0.** Ultralytics YOLO is copyleft (AGPL-3.0), not
 > permissive like the rest of the stack. It's fine for this demo, but a
 > production or closed-source deployment would need an Ultralytics commercial
 > license or a permissively-licensed detector. Flagged here so it's a conscious

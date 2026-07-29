@@ -2,9 +2,9 @@
 
 Deterministic executor (`Operation_controller`) plus a `/cmd_vel` limiter for the
 TurtleBot3 Waffle Pi in the AWS warehouse. `Operation_controller` is a
-hierarchical state machine with two modes — `mapping` and `navigation` — that
-orchestrates slam_toolbox and Nav2. It publishes its current phase on the
-latched topic `/operation_feedback`.
+hierarchical state machine — `mapping`, `navigation`, `collect_goals`,
+`squad_navigation`, `find_person` — that orchestrates slam_toolbox and Nav2. It
+publishes its current phase on the latched topic `/operation_feedback`.
 
 See the design and plan:
 - `docs/superpowers/specs/2026-07-13-operation-controller-design.md`
@@ -53,6 +53,27 @@ times, returns to the dock, then pauses Nav2. `/operation_feedback` reports each
 phase (`start_navigation`, `perimeter`, `perimeter_completed`, `return_to_dock`,
 `docked`, `close_navigation`, `idle`).
 
+## Run: find_person
+
+```bash
+ros2 launch core_task_gazebo warehouse.launch.py
+ros2 launch core_task_controller Operation_controller.launch.py
+ros2 run core_task_perception target_detector
+ros2 run core_task_perception person_approach
+ros2 topic pub --once /submit_mission std_msgs/msg/String \
+  '{data: "{\"mode\": \"find_person\", \"map_name\": \"warehouse\"}"}'
+```
+
+Same startup as `navigation` (localize, load the map), then: spin in place
+scanning for the person; if not found, walk the perimeter once as a search
+route; the moment `target_detector` reports the person, cancel the search goal
+and hand `/cmd_vel` to `person_approach`, which steers in and stops once close
+(`arrived_area` param — see `core_task_perception/README.md`, needs a one-time
+field calibration). The robot stays put near the person; it does not return to
+the dock. A full search with nobody found, or losing the target for more than
+`lost_target_timeout` seconds mid-approach, faults the mission the same way a
+Nav2 failure does anywhere else.
+
 ## Run: natural language (optional)
 
 `nlm_interface` accepts a sentence, asks Claude for mission JSON, validates it,
@@ -92,8 +113,13 @@ mapping:     initialization -> start_mapping -> mapping -> saving ->
              goalpoint_collection -> goal_points_saved -> idle
 navigation:  start_navigation -> perimeter -> perimeter_completed ->
              return_to_dock -> docked -> close_navigation -> idle
-perimeter --(abort)--> return_to_dock   (cancel loops, come home early)
-any phase --(nav timeout / slam crash / save fail)--> fault
+find_person: start_navigation -> search_spin -> [search_patrol] ->
+             approaching -> arrived -> close_navigation -> idle
+             (search_spin/search_patrol skip straight to approaching once
+             the person is seen; no dock return - the robot stays put)
+perimeter/search_spin/search_patrol/approaching --(abort)--> return_to_dock
+any phase --(nav timeout / slam crash / save fail / search exhausted /
+             target lost mid-approach)--> fault
 ```
 
 ## Tests
@@ -103,10 +129,9 @@ client) is unit-tested and needs no ROS graph:
 
 ```bash
 cd src/core_task/core_task_controller
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest test/ -q
+python3 -m pytest test/ -q
 ```
 
-`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` is required: ROS ships a `launch_testing`
-pytest plugin that is incompatible with the installed pytest and aborts
-collection. `test_flake8` / `test_pep257` currently fail on pre-existing style
-debt in `Operation_controller.py` and `llm_client.py`.
+(The repo-root `pytest.ini` disables ROS's `launch_testing`/`launch_ros`
+plugins, which are incompatible with the installed pytest and would otherwise
+abort collection.)

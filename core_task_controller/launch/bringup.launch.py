@@ -10,9 +10,14 @@ mapping, so it is not launched here.
     ros2 launch core_task_controller bringup.launch.py               # two robots (squad)
     ros2 launch core_task_controller bringup.launch.py squad:=false  # single robot
     ros2 launch core_task_controller bringup.launch.py nlm:=false    # no LLM front-end
+    ros2 launch core_task_controller bringup.launch.py vision:=false # no YOLO/find_person
 
 nlm_interface needs ANTHROPIC_API_KEY and exits without it, so it is behind
 `nlm:=` to keep bringup usable for anyone who only wants to drive the robot.
+
+target_detector/person_approach (find_person's detection + approach) are
+behind `vision:=` (default true) since loading the YOLO model costs real
+startup time/memory that anyone not using find_person shouldn't pay for.
 
 `squad:=` (default true) is the single switch for the whole multi-agent layer:
 it spawns robot2 in the sim, brings up robot2's /robot2 Nav2 stack (inactive,
@@ -55,6 +60,13 @@ def generate_launch_description():
         'teleop', default_value='true',
         description='Enable keyboard teleop (teleop_twist_keyboard) for '
                     'manual robot control. On by default; disable with teleop:=false.')
+
+    vision_arg = DeclareLaunchArgument(
+        'vision', default_value='true',
+        description='Start target_detector + person_approach for the '
+                    'find_person mission. On by default; disable with '
+                    'vision:=false to skip loading the YOLO model.')
+    vision = LaunchConfiguration('vision')
 
     # robot2 spawns only when squad is on, so squad:=false gives a clean
     # single-robot sim with no orphaned second robot.
@@ -99,6 +111,26 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(ctrl_share, 'launch', 'nlm_interface.launch.py')),
         condition=IfCondition(LaunchConfiguration('nlm')))
+
+    # find_person's detection + vision-servo approach, robot1 only (the
+    # mission has no squad/multi-robot variant). Gated behind vision:= since
+    # loading the YOLO model adds real startup latency/memory for anyone who
+    # doesn't need it.
+    detector = Node(
+        package='core_task_perception',
+        executable='target_detector',
+        name='target_detector',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
+        condition=IfCondition(vision))
+
+    approach = Node(
+        package='core_task_perception',
+        executable='person_approach',
+        name='person_approach',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
+        condition=IfCondition(vision))
 
     # ---- multi-agent layer (squad:=true) --------------------------------
     # robot2's Nav2 stack under /robot2, inactive like robot1's so its own
@@ -149,7 +181,8 @@ def generate_launch_description():
     # failures before the robots have spawned.
     delayed = TimerAction(
         period=5.0,
-        actions=[nav2, controller, collector, nlm,
+        actions=[nav2, controller, collector, nlm, detector, approach,
                  nav2_r2, controller_r2, coordinator, tf_bridge])
 
-    return LaunchDescription([nlm_arg, squad_arg, teleop_arg, gazebo, delayed])
+    return LaunchDescription(
+        [nlm_arg, squad_arg, teleop_arg, vision_arg, gazebo, delayed])

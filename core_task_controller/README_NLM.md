@@ -112,13 +112,14 @@ Neither `/natural_language_mission` nor `/submit_mission` is latched, so a
 command sent before the node is up goes nowhere. If nothing happens, check
 `/nlm_feedback` first — or use `nlm_cli`, which warns you instead.
 
-Commands map onto the three modes in `function.VALID_MODES`:
+Commands map onto the modes in `function.VALID_MODES`:
 
 | Say | Mission |
 |---|---|
 | "Patrol the perimeter 3 times" | `{"mode": "navigation", "map_name": "warehouse", "loops": 3}` |
 | "Start building a map" | `{"mode": "mapping", "map_name": "warehouse"}` |
 | "Capture the perimeter waypoints" | `{"mode": "collect_goals", "map_name": "warehouse"}` |
+| "Find the person" | `{"mode": "find_person", "map_name": "warehouse"}` |
 
 ## Config
 
